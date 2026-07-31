@@ -1,4 +1,4 @@
-# Last run: Fri Jul 31 11:25:04 UTC 2026
+# Last run: Fri Jul 31 15:13:56 UTC 2026
 # Import Packages
 from google.cloud import bigquery
 import pandas as pd
