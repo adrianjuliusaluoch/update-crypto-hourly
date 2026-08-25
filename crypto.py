@@ -21,6 +21,7 @@ table_id = f"data-storage-485106.investing.crypto_{table_suffix}"
 sql = (f"""
         SELECT *
         FROM `{table_id}`
+        ORDER BY timestamp DESC;
        """)
 
 crypto = client.query(sql).to_dataframe()
