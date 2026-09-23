@@ -47,18 +47,28 @@ DEDUP_COLS = [
 
 
 def get_dataset_slug() -> str:
-    """Pull the Kaggle dataset id straight from the metadata file already
-    used to publish this dataset, so nothing needs hardcoding here."""
-    env_slug = os.environ.get("KAGGLE_DATASET")
-    if env_slug:
-        return env_slug
+    """Pull the Kaggle dataset id from storage/dataset-metadata.json. If that
+    file doesn't exist yet but KAGGLE_DATASET is set, write a minimal one —
+    Kaggle needs this file present for both create and version pushes."""
     if os.path.exists(METADATA_PATH):
         with open(METADATA_PATH) as f:
             return json.load(f)["id"]
+
+    env_slug = os.environ.get("KAGGLE_DATASET")
+    if env_slug:
+        with open(METADATA_PATH, "w") as f:
+            json.dump({
+                "title": env_slug.split("/")[-1].replace("-", " ").title(),
+                "id": env_slug,
+                "licenses": [{"name": "CC0-1.0"}],
+            }, f)
+        print(f"No {METADATA_PATH} found — created one for {env_slug}.")
+        return env_slug
+
     raise FileNotFoundError(
         f"No {METADATA_PATH} found and no KAGGLE_DATASET env var set. "
-        "Add the dataset-metadata.json Kaggle already uses for the crypto "
-        "dataset into storage/, or set KAGGLE_DATASET=username/dataset-slug."
+        "Set KAGGLE_DATASET=username/dataset-slug, or drop a "
+        "dataset-metadata.json into storage/."
     )
 
 
@@ -96,31 +106,53 @@ def fetch_crypto_data() -> pd.DataFrame:
 def download_existing_csv(dataset_slug: str) -> pd.DataFrame:
     """Pull the current CSV off Kaggle so new rows append to full history."""
     try:
-        subprocess.run(
+        dl = subprocess.run(
             [
                 "kaggle", "datasets", "download", "-d", dataset_slug,
                 "-p", WORK_DIR, "--unzip", "--force",
             ],
             check=True, capture_output=True, text=True,
         )
+        print(dl.stdout)
+        # Show what actually landed in storage/, so a wrong/empty file is obvious
+        print("Files in", WORK_DIR, "after download:")
+        for f in os.listdir(WORK_DIR):
+            fp = os.path.join(WORK_DIR, f)
+            print(f"  {f} — {os.path.getsize(fp)} bytes")
+
         if os.path.exists(CSV_PATH):
             existing = pd.read_csv(CSV_PATH)
-            print(f"Downloaded existing dataset: {existing.shape[0]} rows.")
+            print(f"Downloaded existing dataset: {existing.shape[0]} rows, columns: {list(existing.columns)}")
             return existing
+        else:
+            print(f"No {CSV_PATH} found after download/unzip — check the filename Kaggle stored it under above.")
     except subprocess.CalledProcessError as e:
-        print(f"Could not download existing dataset (first run?): {e.stderr}")
+        print(f"Could not download existing dataset (first run?):\nSTDOUT: {e.stdout}\nSTDERR: {e.stderr}")
     return pd.DataFrame()
 
 
 def upload_to_kaggle() -> None:
-    """Push the updated CSV back to Kaggle as a new dataset version.
-    dataset-metadata.json must already exist in storage/ for this to work."""
+    """Push the CSV to Kaggle. Tries 'version' (dataset already exists);
+    if Kaggle says there's nothing to version yet, falls back to 'create'
+    for the first-ever push. From the second run on, 'version' will work."""
+    message = f"Auto-update {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+    try:
+        result = subprocess.run(
+            ["kaggle", "datasets", "version", "-p", WORK_DIR, "-m", message, "-r", "zip"],
+            check=True, capture_output=True, text=True,
+        )
+        print(result.stdout)
+        return
+    except subprocess.CalledProcessError as e:
+        output = f"{e.stdout or ''}{e.stderr or ''}".lower()
+        not_found = any(s in output for s in ("404", "not found", "doesn't exist", "does not exist"))
+        if not not_found:
+            print(f"Kaggle version push failed.\nSTDOUT: {e.stdout}\nSTDERR: {e.stderr}")
+            raise
+        print("Dataset doesn't exist on Kaggle yet — creating it for the first time instead.")
+
     result = subprocess.run(
-        [
-            "kaggle", "datasets", "version", "-p", WORK_DIR,
-            "-m", f"Auto-update {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
-            "-r", "zip",
-        ],
+        ["kaggle", "datasets", "create", "-p", WORK_DIR, "-r", "zip"],
         check=True, capture_output=True, text=True,
     )
     print(result.stdout)
