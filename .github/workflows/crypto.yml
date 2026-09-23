@@ -1,7 +1,7 @@
 name: Update Kaggle Crypto Data Hourly
 on:
   workflow_dispatch:
-  
+
 concurrency:
   group: update-crypto-kg
   cancel-in-progress: false
@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 10
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3  # Updated to v3
+      uses: actions/checkout@v3
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -22,10 +22,17 @@ jobs:
         cache-dependency-path: requirements.txt
     - name: Install dependencies
       run: pip install -r requirements.txt
-    - name: Set up Google Cloud credentials
-      uses: 'google-github-actions/auth@v2'
+    - name: Download existing Kaggle Dataset
+      uses: nick-fields/retry@v3
+      env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
       with:
-        credentials_json: '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}' # Replace with the name of your GitHub Actions secret
+        timeout_minutes: 5
+        max_attempts: 3
+        retry_wait_seconds: 15
+        retry_on: error
+        command: kaggle datasets download -d adrianjuliusaluoch/hourly-crypto-stocks-market-data -p storage --unzip --force
     - name: Run update script
       uses: nick-fields/retry@v3
       with:
