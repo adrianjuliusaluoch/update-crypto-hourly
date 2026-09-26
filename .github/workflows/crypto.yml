@@ -29,8 +29,8 @@ jobs:
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
       with:
         timeout_minutes: 5
-        max_attempts: 3
-        retry_wait_seconds: 15
+        max_attempts: 5
+        retry_wait_seconds: 30
         retry_on: error
         command: kaggle datasets download -d adrianjuliusaluoch/hourly-crypto-stocks-market-data -p storage --unzip --force
     - name: Run update script
